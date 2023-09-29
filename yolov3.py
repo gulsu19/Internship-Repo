@@ -1,69 +1,69 @@
-import cv2
+import cv2 as cv
 import numpy as np
 
-# Path to the YOLO model's configuration file and trained weights
-yolo_config = "C:\\Users\\Gulsu\\Downloads\\yolov3.cfg"
-yolo_weights = "C:\\Users\\Gulsu\\Downloads\\yolov3.weights"
+# Load YOLOv3 model
+net = cv.dnn.readNet('C:\\Users\\Gulsu\\Downloads\\yolov3.cfg','C:\\Users\\Gulsu\\Downloads\\yolov3.weights')
 
-# Path to the class labels file
-classes_file = "C:\\Users\\Gulsu\\Downloads\\coco.names"
+# Load COCO classes
+classes = []
+with open('C:\\Users\\Gulsu\\Downloads\\coco.names', 'r') as f:
+    classes = [line.strip() for line in f.readlines()]
 
-# Index of the "human" class
-human_class_index = 0  # In the COCO dataset, the index of the "human" class is 0
 
-# Load class labels
-with open(classes_file, 'r') as f:
-    classes = f.read().strip().split('\n')
+outs = net.getUnconnectedOutLayers()
+outs = [outs[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+output_layers = [layer_names[i[0] - 1] for i in outs]
 
-# Load the YOLO model
-net = cv2.dnn.readNet(yolo_weights, yolo_config)
 
-# Use GPU if available (uncomment these lines if GPU is supported)
-# net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-# net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
-
-# Video capture
-video_path = "C:\\Users\\Gulsu\\Desktop\\Earthquake Classroom Video.mp4"
-cap = cv2.VideoCapture(video_path)
+# Load video
+cap = cv.VideoCapture('C:\\Users\\Gulsu\\Desktop\\Earthquake Classroom Video.mp4')
 
 while True:
+    # Read frame from video
     ret, frame = cap.read()
     if not ret:
         break
-    
-    height, width = frame.shape[:2]
-    
-    # Set the input image for YOLO
-    blob = cv2.dnn.blobFromImage(frame, 1/255.0, (416, 416), swapRB=True, crop=False)
+
+    # Resize frame to (416, 416)
+    blob = cv.dnn.blobFromImage(frame, 1/255, (416, 416), swapRB=True, crop=False)
+
+    # Pass frame through network
     net.setInput(blob)
-    
-    # Perform YOLO detection
-    layer_names = net.getUnconnectedOutLayersNames()
-    outputs = net.forward(layer_names)
-    
-    # Process detection results
-    for output in outputs:
-        for detection in output:
+    outs = net.forward(output_layers)
+
+    # Process each output layer
+    boxes = []
+    confidences = []
+    class_ids = []
+    for out in outs:
+        for detection in out:
             scores = detection[5:]
             class_id = np.argmax(scores)
             confidence = scores[class_id]
-            
-            if confidence > 0.5 and class_id == 0:  # Detect only humans
-                center_x = int(detection[0] * width)
-                center_y = int(detection[1] * height)
-                w = int(detection[2] * width)
-                h = int(detection[3] * height)
-                
-                x = int(center_x - w / 2)
-                y = int(center_y - h / 2)
-                
-                # Draw a rectangle
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-    
-    cv2.imshow("Video", frame)
-    
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+            if confidence > 0.5 and class_id == 0:
+                center_x = int(detection[0] * frame.shape[1])
+                center_y = int(detection[1] * frame.shape[0])
+                w = int(detection[2] * frame.shape[1])
+                h = int(detection[3] * frame.shape[0])
+                x = center_x - w // 2
+                y = center_y - h // 2
+                boxes.append([x, y, w, h])
+                confidences.append(float(confidence))
+                class_ids.append(class_id)
+
+    # Apply non-maximum suppression
+    indices = cv.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+
+    # Draw boxes around detected humans
+    for i in indices:
+        i = i[0]
+        x, y, w, h = boxes[i]
+        cv.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+    # Display output
+    cv.imshow('frame', frame)
+    if cv.waitKey(1) == ord('q'):
         break
 
 cap.release()
-cv2.destroyAllWindows()
+cv.destroyAllWindows()
